@@ -376,7 +376,7 @@ static void mlx90393_work_handler(struct k_work *work) {
             // convert woc threshold to calibrated result
             // tune `thd_trim` with 3 facts: noise reduction, resolution, power efficiency
             //
-            float thd_trim_pctg = config->woc_thd_trim_pctg / 100;
+            float thd_trim_pctg = config->woc_thd_trim_pctg * 0.01;
             data->thd_xy = ( data->thd_xy * thd_trim_pctg ) + config->ex_woc_thd_xy;
             data->thd_z = ( data->thd_z * thd_trim_pctg ) + config->ex_woc_thd_z;
             LOG_INF("thd xy:%6d z:%6d", data->thd_xy, data->thd_z);
