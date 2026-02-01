@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: MIT
+
+description: |
+  MLX90393 magnetometer sensor input driver
+
+compatible: "melexis,mlx90393"
+
+include: [base.yaml, i2c-device.yaml, "melexis,mlx90393-common.yaml"]

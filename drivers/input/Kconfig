@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: MIT
+
+config INPUT_MLX90393
+	bool "MLX90393 magnetometer sensor input driver"
+	default y
+	depends on DT_HAS_MELEXIS_MLX90393_ENABLED
+	help
+	  MLX90393 magnetometer sensor input driver
