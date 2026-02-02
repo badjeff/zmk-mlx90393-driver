@@ -7,9 +7,17 @@ This work is based on [te9no/zmk-driver-MLX90393](https://github.com/te9no/zmk-d
 - INT pin support with Wake-On Change Mode
 - Auto-calibration for Wake-On Change threshold
 - Auto-upshift to Burst Mode on leaving dead zone
-- Auto-downshift to Wake-on Change mode on back to neutral origin position
+- Auto-downshift to Wake-on Change mode on back to neutral position
 - Configurable axis disable
 - Fix on-chip sample rate at ~20ms
+
+
+## How is it auto-calibrated and perform measure mode up/down-shift ?
+
+Default to measure 100 samples on bootup to collect the neutral drifts of each axes. And then, apply the mean of samples (scaled down to 75%) on each axes as the Wake-on Change Threashold. Intrrupts would be reduced on neutral position at Wake-on Change Mode. But, few false-interrupts still occur occasionally due to unstable magnetic field.
+
+On any axes exceed the configurable deadzone, it upshifts to Burst Mode to intrrupt at full resolution. While it detects the magnetic souece back to its neutral position by counting up to 75 times without any axes exceeding the deadzone, it downshifts to Wake-on Change Mode.
+
 
 ## Installation
 
