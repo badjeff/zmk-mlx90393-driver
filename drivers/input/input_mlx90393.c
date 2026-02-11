@@ -457,7 +457,7 @@ static void mlx90393_work_handler(struct k_work *work) {
             input_report_rel(dev, INPUT_REL_X, 0, false, K_FOREVER);
             input_report_rel(dev, INPUT_REL_Y, 0, false, K_FOREVER);
             input_report_rel(dev, INPUT_REL_Z, 0, true, K_FOREVER);
-            LOG_DBG("NEUTRAL x/y/z: 0 / 0 / 0");
+            LOG_DBG("NEUTRAL");
 
             ret = mlx90393_exit_mode(dev);
             if (ret < 0) {
