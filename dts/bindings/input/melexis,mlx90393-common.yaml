@@ -41,7 +41,7 @@ properties:
 
   downshift:
     type: int
-    default: 75
+    default: 25
     description: |
       Maximum in-deadzone-interrupts in burst mode before downshift to wake-on change mode.
       Interrupt interval is hardcode to ~20ms, default 75 * ~20ms = 1500ms downshift

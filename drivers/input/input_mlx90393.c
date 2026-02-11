@@ -408,35 +408,29 @@ static void mlx90393_work_handler(struct k_work *work) {
         goto reenable_irq; // Skip input during calibration
     }
 
-    int16_t dx = x - data->org_x;
-    int16_t dy = y - data->org_y;
-    int16_t dz = z - data->org_z;
-    
-    if (abs(dx) < (int)config->rpt_dzn_x) dx = 0;
-    if (abs(dy) < (int)config->rpt_dzn_y) dy = 0;
-    if (abs(dz) < (int)config->rpt_dzn_z) dz = 0;
+    // delta from origin
+    int16_t ox = x - data->org_x;
+    int16_t oy = y - data->org_y;
+    int16_t oz = z - data->org_z;
+
+    // apply deadzones
+    bool ox_in_dz = abs(ox) < (int)config->rpt_dzn_x;
+    bool oy_in_dz = abs(ox) < (int)config->rpt_dzn_y;
+    bool oz_in_dz = abs(ox) < (int)config->rpt_dzn_z;
+    bool in_deadzone = ox_in_dz && oy_in_dz && oz_in_dz;
+    int16_t dx = (ox_in_dz) ? 0 : ox;
+    int16_t dy = (oy_in_dz) ? 0 : oy;
+    int16_t dz = (oz_in_dz) ? 0 : oz;
 
     // LOG_DBG("raw x:%6d y:%6d z:%6d | org x:%d y:%d z:%d | crd z:%6d y:%6d z:%6d",
     //         x, y, z, data->org_x, data->org_y, data->org_z, dx, dy, dz);
-    // LOG_DBG("min/max: x:%d/%d y:%d/%d z:%d/%d", 
-    //         (int)data->min_x, (int)data->max_x, (int)data->min_y, (int)data->max_y, 
-    //         (int)data->min_z, (int)data->max_z);
-    // LOG_DBG("thd xy:%d z:%d", data->thd_xy, data->thd_z);
 
-    if (dx || dy || dz) {
-        if (dx) {
-            input_report_rel(dev, INPUT_REL_X, dx, !dy && !dz, K_FOREVER);
-        }
-        if (dy) {
-            input_report_rel(dev, INPUT_REL_Y, dy, !dz, K_FOREVER);
-        }
-        if (dz) {
-            input_report_rel(dev, INPUT_REL_Z, dz, true, K_FOREVER);
-        }
+    if (!in_deadzone) {
+        if (dx) { input_report_rel(dev, INPUT_REL_X, dx, !dy && !dz, K_FOREVER); }
+        if (dy) { input_report_rel(dev, INPUT_REL_Y, dy, !dz, K_FOREVER); }
+        if (dz) { input_report_rel(dev, INPUT_REL_Z, dz, true, K_FOREVER); }
         LOG_DBG("delta x/y/z: %6d / %6d / %6d", dx, dy, dz);
     }
-
-    bool in_deadzone = !dx && !dy && !dz;
 
     //
     // when the most recent readings are all within the dead zone of the downshift interval.
@@ -444,16 +438,26 @@ static void mlx90393_work_handler(struct k_work *work) {
     //
     if (in_deadzone && data->in_burst_mode) {
 
+        if (ox) { input_report_rel(dev, INPUT_REL_X, ox, !oy && !oz, K_FOREVER); }
+        if (oy) { input_report_rel(dev, INPUT_REL_Y, oy, !oz, K_FOREVER); }
+        if (oz) { input_report_rel(dev, INPUT_REL_Z, oz, true, K_FOREVER); }
+        LOG_DBG("DELTA x/y/z: %6d / %6d / %6d", ox, oy, oz);
+
         data->burst_in_deadzone = data->burst_in_deadzone + 1;
 
-        #if CONFIG_ZMK_LOG_LEVEL >= LOG_LEVEL_DBG
-        if (data->burst_in_deadzone % (config->downshift/3) == 0) {
-            LOG_DBG("burst_in_deadzone: %d", data->burst_in_deadzone);
-        }
-        #endif
+        // #if CONFIG_ZMK_LOG_LEVEL >= LOG_LEVEL_DBG
+        // if (data->burst_in_deadzone % (config->downshift/3) == 0) {
+        //     LOG_DBG("burst_in_deadzone: %d", data->burst_in_deadzone);
+        // }
+        // #endif
 
         if (data->burst_in_deadzone >= config->downshift) {
             data->burst_in_deadzone = 0;
+
+            input_report_rel(dev, INPUT_REL_X, 0, false, K_FOREVER);
+            input_report_rel(dev, INPUT_REL_Y, 0, false, K_FOREVER);
+            input_report_rel(dev, INPUT_REL_Z, 0, true, K_FOREVER);
+            LOG_DBG("NEUTRAL x/y/z: 0 / 0 / 0");
 
             ret = mlx90393_exit_mode(dev);
             if (ret < 0) {

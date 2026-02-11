@@ -90,9 +90,9 @@ Update `board.overlay` adding the necessary bits (update the pins for your board
                Adjust this to filter extreme cases of samples during calibration. */
         // ex-woc-thd-xy = <0>; /* extra delta for XY-axis wake-on-change threshold */
         // ex-woc-thd-z = <0>:  /* extra delta for Z-axis wake-on-change threshold */
-        // downshift = <75>: /* 
+        // downshift = <25>: /* 
             /* Maximum in-deadzone-interrupts in burst mode before downshift to wake-on change mode.
-               Interrupt interval is hardcode to ~20ms, default 75 * ~20ms = 1500ms downshift */
+               Interrupt interval is hardcode to ~20ms, default 25 * ~20ms = 500ms downshift */
         // rpt-dzn-x = <150>; /* x-axis deadzone */
         // rpt-dzn-y = <150>; /* y-axis deadzone */
         // rpt-dzn-z = <150>; /* z-axis deadzone */
