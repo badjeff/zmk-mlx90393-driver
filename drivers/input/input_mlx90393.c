@@ -251,7 +251,7 @@ static int mlx90393_set_config(const struct device *dev) {
 }
 
 static int mlx90393_set_woc_threshold(const struct device *dev) {
-    const struct mlx90393_config *config = dev->config;
+    // const struct mlx90393_config *config = dev->config;
     struct mlx90393_data *data = dev->data;
 
     LOG_INF("setting woc threshold xy:%d z:%d", data->thd_xy, data->thd_z);
@@ -318,7 +318,7 @@ static void mlx90393_work_handler(struct k_work *work) {
     uint8_t cmd;
     uint8_t read_data[7];
     int ret;
-    int16_t x, y, z;
+    int16_t x=0, y=0, z=0;
 
     // Read measurement after conversion time
     cmd = 0x4E & data->mask_zyxt;
