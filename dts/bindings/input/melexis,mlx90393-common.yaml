@@ -39,12 +39,17 @@ properties:
     default: 0
     description: extra delta for Z-axis wake-on-change threshold
 
+  smooth-len:
+    type: int
+    default: 5
+    description: Number of samples for smoothing
+
   downshift:
     type: int
     default: 25
     description: |
       Maximum in-deadzone-interrupts in burst mode before downshift to wake-on change mode.
-      Interrupt interval is hardcode to ~20ms, default 75 * ~20ms = 1500ms downshift
+      Interrupt interval is hardcode to ~20ms, default 25 * ~20ms = 500ms downshift
 
   rpt-dzn-x:
     type: int

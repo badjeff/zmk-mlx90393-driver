@@ -17,6 +17,7 @@
 #include <zephyr/sys/byteorder.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <math.h>
 
 LOG_MODULE_REGISTER(input_mlx90393, CONFIG_ZMK_LOG_LEVEL);
 
@@ -32,6 +33,7 @@ struct mlx90393_config {
     uint16_t calib_cycle;
     uint8_t woc_thd_trim_pctg;
     uint16_t ex_woc_thd_xy, ex_woc_thd_z;
+    uint8_t smooth_len;
     uint16_t downshift;
     uint16_t rpt_dzn_x, rpt_dzn_y, rpt_dzn_z;
 };
@@ -48,8 +50,11 @@ struct mlx90393_data {
     int32_t sum_x, sum_y, sum_z;
     int32_t min_x, min_y, min_z;
     int32_t max_x, max_y, max_z;
-    int16_t thd_xy; // 0x07h: WOXY_THRESHOLD [15:0] (signed)
-    int16_t thd_z;  // 0x08h: WOZ_THRESHOLD [15:0] (signed)
+    int16_t thd_xy;
+    int16_t thd_z;
+    int16_t *smooth_x, *smooth_y, *smooth_z;
+    uint8_t smooth_filled;
+    uint8_t smooth_idx;
     bool in_woc_mode, in_burst_mode;
     uint16_t burst_in_deadzone;
 };
@@ -413,10 +418,26 @@ static void mlx90393_work_handler(struct k_work *work) {
     int16_t oy = y - data->org_y;
     int16_t oz = z - data->org_z;
 
+    // smooth with recent
+    data->smooth_x[data->smooth_idx] = ox;
+    data->smooth_y[data->smooth_idx] = oy;
+    data->smooth_z[data->smooth_idx] = oz;
+    data->smooth_filled = MAX(data->smooth_filled, data->smooth_idx + 1);
+    float sum_x = 0, sum_y = 0, sum_z = 0;
+    for (int i = 0; i < data->smooth_filled; i++) {
+        sum_x += (float)data->smooth_x[i];
+        sum_y += (float)data->smooth_y[i];
+        sum_z += (float)data->smooth_z[i];
+    }
+    ox = (int16_t)roundf(sum_x / data->smooth_filled);
+    oy = (int16_t)roundf(sum_y / data->smooth_filled);
+    oz = (int16_t)roundf(sum_z / data->smooth_filled);
+    data->smooth_idx = (data->smooth_idx + 1) % config->smooth_len;
+
     // apply deadzones
     bool ox_in_dz = abs(ox) < (int)config->rpt_dzn_x;
-    bool oy_in_dz = abs(ox) < (int)config->rpt_dzn_y;
-    bool oz_in_dz = abs(ox) < (int)config->rpt_dzn_z;
+    bool oy_in_dz = abs(oy) < (int)config->rpt_dzn_y;
+    bool oz_in_dz = abs(oz) < (int)config->rpt_dzn_z;
     bool in_deadzone = ox_in_dz && oy_in_dz && oz_in_dz;
     int16_t dx = (ox_in_dz) ? 0 : ox;
     int16_t dy = (oy_in_dz) ? 0 : oy;
@@ -429,7 +450,7 @@ static void mlx90393_work_handler(struct k_work *work) {
         if (dx) { input_report_rel(dev, INPUT_REL_X, dx, !dy && !dz, K_FOREVER); }
         if (dy) { input_report_rel(dev, INPUT_REL_Y, dy, !dz, K_FOREVER); }
         if (dz) { input_report_rel(dev, INPUT_REL_Z, dz, true, K_FOREVER); }
-        LOG_DBG("delta x/y/z: %6d / %6d / %6d", dx, dy, dz);
+        // LOG_DBG("delta x/y/z: %6d / %6d / %6d", dx, dy, dz);
     }
 
     //
@@ -441,7 +462,7 @@ static void mlx90393_work_handler(struct k_work *work) {
         if (ox) { input_report_rel(dev, INPUT_REL_X, ox, !oy && !oz, K_FOREVER); }
         if (oy) { input_report_rel(dev, INPUT_REL_Y, oy, !oz, K_FOREVER); }
         if (oz) { input_report_rel(dev, INPUT_REL_Z, oz, true, K_FOREVER); }
-        LOG_DBG("DELTA x/y/z: %6d / %6d / %6d", ox, oy, oz);
+        // LOG_DBG("DELTA x/y/z: %6d / %6d / %6d", ox, oy, oz);
 
         data->burst_in_deadzone = data->burst_in_deadzone + 1;
 
@@ -458,6 +479,14 @@ static void mlx90393_work_handler(struct k_work *work) {
             input_report_rel(dev, INPUT_REL_Y, 0, false, K_FOREVER);
             input_report_rel(dev, INPUT_REL_Z, 0, true, K_FOREVER);
             LOG_DBG("NEUTRAL");
+
+            for (int i = 0; i < config->smooth_len; i++) {
+                data->smooth_x[i] = 0;
+                data->smooth_y[i] = 0;
+                data->smooth_z[i] = 0;
+            }
+            data->smooth_filled = 0;
+            data->smooth_idx = 0;
 
             ret = mlx90393_exit_mode(dev);
             if (ret < 0) {
@@ -571,6 +600,21 @@ static int mlx90393_init(const struct device *dev) {
     data->in_burst_mode = false;
     data->burst_in_deadzone = 0;
 
+    data->smooth_x = malloc(config->smooth_len * sizeof(int16_t));
+    data->smooth_y = malloc(config->smooth_len * sizeof(int16_t));
+    data->smooth_z = malloc(config->smooth_len * sizeof(int16_t));
+    if (!data->smooth_x || !data->smooth_y || !data->smooth_z) {
+        LOG_ERR("Failed to allocate smoothing history slots");
+        return -ENOMEM;
+    }
+    for (int i = 0; i < config->smooth_len; i++) {
+        data->smooth_x[i] = 0;
+        data->smooth_y[i] = 0;
+        data->smooth_z[i] = 0;
+    }
+    data->smooth_filled = 0;
+    data->smooth_idx = 0;
+
     uint8_t mask_zyxt = 0xFE;
     if (config->no_x) mask_zyxt ^= BIT(1);
     if (config->no_y) mask_zyxt ^= BIT(2);
@@ -647,6 +691,7 @@ static int mlx90393_init(const struct device *dev) {
         .woc_thd_trim_pctg = DT_INST_PROP(n, woc_thd_trim_pctg),                                  \
         .ex_woc_thd_xy = DT_INST_PROP(n, ex_woc_thd_xy),                                          \
         .ex_woc_thd_z = DT_INST_PROP(n, ex_woc_thd_z),                                            \
+        .smooth_len = DT_INST_PROP(n, smooth_len),                                                \
         .downshift = DT_INST_PROP(n, downshift),                                                  \
         .rpt_dzn_x = DT_INST_PROP(n, rpt_dzn_x),                                                  \
         .rpt_dzn_y = DT_INST_PROP(n, rpt_dzn_y),                                                  \
