@@ -23,6 +23,10 @@ LOG_MODULE_REGISTER(input_mlx90393, CONFIG_ZMK_LOG_LEVEL);
 
 #define MLX90383_STATUS_ERR_BITS (BIT(4) | BIT(3))
 
+#ifndef M_PI
+#define M_PI (3.14159265358979323846f)
+#endif
+
 struct mlx90393_config {
     union {
         struct i2c_dt_spec i2c;
@@ -419,20 +423,34 @@ static void mlx90393_work_handler(struct k_work *work) {
     int16_t oz = z - data->org_z;
 
     // smooth with recent
-    data->smooth_x[data->smooth_idx] = ox;
-    data->smooth_y[data->smooth_idx] = oy;
-    data->smooth_z[data->smooth_idx] = oz;
-    data->smooth_filled = MAX(data->smooth_filled, data->smooth_idx + 1);
-    float sum_x = 0, sum_y = 0, sum_z = 0;
-    for (int i = 0; i < data->smooth_filled; i++) {
-        sum_x += (float)data->smooth_x[i];
-        sum_y += (float)data->smooth_y[i];
-        sum_z += (float)data->smooth_z[i];
+    if (config->smooth_len > 0) {
+        data->smooth_x[data->smooth_idx] = ox;
+        data->smooth_y[data->smooth_idx] = oy;
+        data->smooth_z[data->smooth_idx] = oz;
+        data->smooth_filled = MAX(data->smooth_filled, data->smooth_idx + 1);
+        float sum_x = 0, sum_y = 0, sum_z = 0, sum_w = 0;
+        for (int i = 0; i < data->smooth_filled; i++) {
+
+            /* variants of weight distribution by index distance
+            int d = abs(i - data->smooth_idx);
+            float w = 0.5f + 0.5f * cosf(M_PI * d / (float)(data->smooth_filled));
+            float w = 0.65f + 0.35f * cosf(M_PI * d / (float)(data->smooth_filled));
+            float w = 0.75f + 0.25f * cosf(M_PI * d / (float)(data->smooth_filled));
+            float w = 1.0f;
+            */
+            int d = abs(i - data->smooth_idx);
+            float w = 0.75f + 0.25f * cosf(M_PI * d / (float)(data->smooth_filled));
+
+            sum_x += w * (float)data->smooth_x[i];
+            sum_y += w * (float)data->smooth_y[i];
+            sum_z += w * (float)data->smooth_z[i];
+            sum_w += w;
+        }
+        ox = (int16_t)roundf(sum_x / sum_w);
+        oy = (int16_t)roundf(sum_y / sum_w);
+        oz = (int16_t)roundf(sum_z / sum_w);
+        data->smooth_idx = (data->smooth_idx + 1) % config->smooth_len;
     }
-    ox = (int16_t)roundf(sum_x / data->smooth_filled);
-    oy = (int16_t)roundf(sum_y / data->smooth_filled);
-    oz = (int16_t)roundf(sum_z / data->smooth_filled);
-    data->smooth_idx = (data->smooth_idx + 1) % config->smooth_len;
 
     // apply deadzones
     bool ox_in_dz = abs(ox) < (int)config->rpt_dzn_x;
@@ -480,13 +498,15 @@ static void mlx90393_work_handler(struct k_work *work) {
             input_report_rel(dev, INPUT_REL_Z, 0, true, K_FOREVER);
             LOG_DBG("NEUTRAL");
 
-            for (int i = 0; i < config->smooth_len; i++) {
-                data->smooth_x[i] = 0;
-                data->smooth_y[i] = 0;
-                data->smooth_z[i] = 0;
+            if (config->smooth_len > 0) {
+                for (int i = 0; i < config->smooth_len; i++) {
+                    data->smooth_x[i] = 0;
+                    data->smooth_y[i] = 0;
+                    data->smooth_z[i] = 0;
+                }
+                data->smooth_filled = 0;
+                data->smooth_idx = 0;
             }
-            data->smooth_filled = 0;
-            data->smooth_idx = 0;
 
             ret = mlx90393_exit_mode(dev);
             if (ret < 0) {
@@ -600,20 +620,22 @@ static int mlx90393_init(const struct device *dev) {
     data->in_burst_mode = false;
     data->burst_in_deadzone = 0;
 
-    data->smooth_x = malloc(config->smooth_len * sizeof(int16_t));
-    data->smooth_y = malloc(config->smooth_len * sizeof(int16_t));
-    data->smooth_z = malloc(config->smooth_len * sizeof(int16_t));
-    if (!data->smooth_x || !data->smooth_y || !data->smooth_z) {
-        LOG_ERR("Failed to allocate smoothing history slots");
-        return -ENOMEM;
+    if (config->smooth_len) {
+        data->smooth_x = malloc(config->smooth_len * sizeof(int16_t));
+        data->smooth_y = malloc(config->smooth_len * sizeof(int16_t));
+        data->smooth_z = malloc(config->smooth_len * sizeof(int16_t));
+        if (!data->smooth_x || !data->smooth_y || !data->smooth_z) {
+            LOG_ERR("Failed to allocate smoothing history slots");
+            return -ENOMEM;
+        }
+        for (int i = 0; i < config->smooth_len; i++) {
+            data->smooth_x[i] = 0;
+            data->smooth_y[i] = 0;
+            data->smooth_z[i] = 0;
+        }
+        data->smooth_filled = 0;
+        data->smooth_idx = 0;
     }
-    for (int i = 0; i < config->smooth_len; i++) {
-        data->smooth_x[i] = 0;
-        data->smooth_y[i] = 0;
-        data->smooth_z[i] = 0;
-    }
-    data->smooth_filled = 0;
-    data->smooth_idx = 0;
 
     uint8_t mask_zyxt = 0xFE;
     if (config->no_x) mask_zyxt ^= BIT(1);
