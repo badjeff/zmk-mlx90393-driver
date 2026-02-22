@@ -242,7 +242,7 @@ static int mlx90393_set_config(const struct device *dev) {
 
     reg_config[0] = 0x60;  // Write register command
     reg_config[1] = 0x02;  // AH: 0x02
-    reg_config[2] = 0xB4;  // AL: 0xB4, RES for magnetic measurement = 0
+    reg_config[2] = 0xBF;  // AL: 0xBF, RES for magnetic measurement = 0, OSR = 3, DIG_FILT = 7
     reg_config[3] = 0x02 << 2;  // Select address register, (0x02 << 2)
     ret = mlx90393_cmd_read(dev, reg_config, 4, &status, 1);
 
