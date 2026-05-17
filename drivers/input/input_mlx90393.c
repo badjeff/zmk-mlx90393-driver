@@ -45,7 +45,6 @@ struct mlx90393_config {
 struct mlx90393_data {
     const struct device *dev;
     struct gpio_callback irq_gpio_cb;
-    struct k_work trigger_work;
     struct k_work read_work;
     uint8_t mask_zyxt;
     bool calibrated;
